@@ -70,6 +70,7 @@ def main():
     ap.add_argument("--streams")
     ap.add_argument("--xmltv")
     ap.add_argument("--logos", default="logos.json")
+    ap.add_argument("--matched", default="matched.json")
     ap.add_argument("--base-url", default=os.environ.get("LOGO_BASE_URL", ""))
     ap.add_argument("--out", default="site/epg.xml.gz")
     ap.add_argument("--report", default="site/report.json")
@@ -77,16 +78,22 @@ def main():
 
     with open(args.logos, encoding="utf-8") as f:
         logos = json.load(f)
+    with open(args.matched, encoding="utf-8") as f:
+        matched = {norm(n) for n in json.load(f)}
     by_norm = {norm(k): v for k, v in logos.items()}
     streams, xmltv = provider_data(args)
 
-    # Playlist channel name -> (logo image, EPG id)
+    # Playlist channel name -> (logo image, EPG id). Hand-matched logos always apply; logos from
+    # the wider collection (often generic category icons) only fill in where the provider has none.
     wanted = {}
     for s in streams:
         name = (s.get("name") or "").strip()
         img = logos.get(name) or by_norm.get(norm(name))
-        if name and img:
-            wanted[name] = (img, (s.get("epg_channel_id") or "").strip())
+        if not (name and img):
+            continue
+        if norm(name) not in matched and (s.get("stream_icon") or "").strip():
+            continue
+        wanted[name] = (img, (s.get("epg_channel_id") or "").strip())
 
     channels, programmes = {}, collections.defaultdict(list)
     for _, el in ET.iterparse(io.BytesIO(xmltv)):
